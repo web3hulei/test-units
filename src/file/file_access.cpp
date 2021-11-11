@@ -41,7 +41,7 @@ TEST(File, AccessPattern){
     //Prepare file
     const char *file_name = "$FILE$ACCESSPATTERNTEST$";
     create_file(file_name, SIZE);
-    int fd = open_file(file_name, O_RDONLY);
+    int fd = open_file(file_name, O_RDONLY | O_DIRECT);
     uint64_t unit_sizes[] = {4 * 1024, 4 * 1024 * 1024, 32 * 1024 * 1024};
     for (uint64_t unit_size : unit_sizes) {
         //Test sequential read
