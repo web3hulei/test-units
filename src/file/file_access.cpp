@@ -4,6 +4,8 @@
 
 #include <gtest/gtest.h>
 #include <cstdint>
+#include <thread>
+#include <vector>
 #include "../utils/file_handler.h"
 
 static constexpr uint32_t ALIGNMENT = 4 * 1024;
@@ -37,7 +39,7 @@ void create_file(const char *file_name, uint64_t size) {
 }
 
 TEST(File, AccessPattern){
-    constexpr uint64_t SIZE = 32UL * 1024 * 1024 * 1024;
+    constexpr uint64_t SIZE = 32UL * 1024 * 1024;
     //Prepare file
     const char *file_name = "$FILE$ACCESSPATTERNTEST$";
     create_file(file_name, SIZE);
@@ -79,6 +81,30 @@ TEST(File, AccessPattern){
         end = std::chrono::steady_clock::now();
         time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
         printf("Use direct IO to random read %s bytes from file. Block size: %s, Bandwidth: %.2f GB/s\n", bytes_to_string(SIZE).c_str(), bytes_to_string(unit_size).c_str(), SIZE / 1024.0 / 1024.0 / 1024.0 * 1000.0 / time_elapsed);
+
+        //Test Random access In parallel
+        start = std::chrono::steady_clock::now();
+        uint32_t thread_num = 2;
+        std::vector<std::unique_ptr<std::thread>> threads(thread_num);
+        for (uint32_t i = 0; i < threads.size(); i++) {
+            threads[i].reset(new std::thread([&indexes, i, thread_num, block_num, file_name, unit_size]() mutable{
+                int fd = open_file(file_name, O_RDONLY | O_DIRECT);
+                std::unique_ptr<uint8_t[]> buf(new uint8_t[unit_size + ALIGNMENT - 1]);
+                uint8_t *aligned_ptr = (uint8_t*)(((uint64_t)buf.get() + ALIGNMENT - 1) / ALIGNMENT * ALIGNMENT);
+                while(i < block_num) {
+                    seek_file(fd, indexes[i] * unit_size);
+                    read_file(fd, aligned_ptr, unit_size);
+                    i += thread_num;
+                }
+            }));
+        }
+        for (uint32_t i = 0; i < threads.size(); i++){
+            threads[i]->join();
+        }
+        end = std::chrono::steady_clock::now();
+        time_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        printf("Use direct IO to random read %s bytes from file in parallel(%d threads). Block size: %s, Bandwidth: %.2f GB/s\n", bytes_to_string(SIZE).c_str(), thread_num, bytes_to_string(unit_size).c_str(), SIZE / 1024.0 / 1024.0 / 1024.0 * 1000.0 / time_elapsed);
+
     }
     remove_file(file_name);
 }
